@@ -1,5 +1,12 @@
 # Design: checking the irreducible M-matrix property (`proto/m-matrix`)
 
+Status (2026-10-10, checked against `main` 95d8925; see `review_proto_doc.md`): merged as PR #18
+(d4cdc49). On `main` the Boost Graph program of section 3 was replaced by
+`staging/check_m_matrix.py` (3bda041, `scipy.sparse.csgraph`) and removed (17d64c7); `test_m_matrix`
+and the `m_matrix_*` ctests are gone, so no ctest covers the property now. `tex/taussky_theorem.tex`,
+cited here and in `check_m_matrix.py`, is not in the repository on any branch. The results of
+section 4 were re-measured with the script on 2026-10-10 (last column).
+
 Branch `proto/m-matrix`, 1 commit on top of `efc7292` (state of 2026-10-07); it also marks
 `test_m_matrix` as obsolete:
 
@@ -12,14 +19,14 @@ Branch `proto/m-matrix`, 1 commit on top of `efc7292` (state of 2026-10-07); it 
 - Positivity of the discrete ground state and of the energy-adaptive iterates rests on
   A_u = S + M_{V,L} + β M_{φφ,L}(u) being an M-matrix with a positive inverse: the step
   u ↦ A_u⁻¹ M_L u then maps non-negative u ≠ 0 to strictly positive vectors (Hauck, Liang,
-  Peterseim, Numer. Math. 158, 2026).
+  Peterseim, Numer. Math. 158, 2026; arXiv:2405.17090).
 - Lumping only adds non-negative values to the diagonal, so the question reduces to the stiffness
   matrix S on a given mesh: non-positive off-diagonal entries, plus irreducibility for a
   *strictly* positive inverse.
 - `test_m_matrix` checked the sign pattern and a few columns of A₀⁻¹ for fixed meshes, but not
   irreducibility, and the mesh was not selectable.
 
-## 2. Theory (`tex/taussky_theorem.tex`)
+## 2. Theory (`tex/taussky_theorem.tex`, not in the repository)
 
 - **Taussky (1949):** an irreducibly diagonally dominant matrix (irreducible, weakly dominant in
   every row, strictly in at least one) is non-singular. Proof via the index set where |x_i| is
@@ -34,7 +41,12 @@ Branch `proto/m-matrix`, 1 commit on top of `efc7292` (state of 2026-10-07); it 
 - The document has 12 references, verified against Crossref, publisher pages and zbMATH; DOIs
   are linked.
 
-## 3. `staging/main_m_matrix.cc`
+## 3. `staging/main_m_matrix.cc` (history; replaced on `main`)
+
+On `main` the check is `python staging/check_m_matrix.py <base> --matrix S|MV|A0 [--tol 1e-14]
+[--inverse-columns k] [--print-components]` over the Matrix Market files that
+`main_matrix --matrix-market` writes (`matrix_lvl<L>_dim<d>_{M,S,MV}.mtx`; `A0 = S + M_V` is formed
+by the script). The checks and the output format are those listed below; the program itself is gone.
 
 - Assembles `--matrix stiffness` (S, with the package's quadrature via `get_quadrature()`) or
   `--matrix A0` (S + M_V; lumped with `--mass-lumping`) on the mesh of `GrossPitaevskiiPackage`,
@@ -58,19 +70,20 @@ Branch `proto/m-matrix`, 1 commit on top of `efc7292` (state of 2026-10-07); it 
   edge for every coupling above the tolerance; `--print-components` lists component sizes.
 - Exit code 0 if all hypotheses hold on every level, 1 otherwise, 2 on errors; usable as ctest.
 - ctests `m_matrix_q1_2d`, `m_matrix_p1_2d`, `m_matrix_q1_3d` check the lumped A₀, whose
-  off-diagonal entries and graph are those of S.
+  off-diagonal entries and graph are those of S. (Removed with the program on `main`; see the
+  status note above.)
 
 ## 4. Results (Dirichlet, radius 8)
 
-| Case | Result |
-|---|---|
-| 2D Q1, S, level 5 | all hypotheses hold (56 of 225 rows strictly dominant, 1 component) |
-| 2D P1 simplex, S, level 4 | holds; min relative entry of A⁻¹ 7.8e-4 |
-| 3D Q1, S, level 3 | holds |
-| 2D P1 simplex, lumped A₀, levels 2–5 | holds on every level |
-| 3D P1 simplex, lumped A₀ | fails: 268 positive off-diagonal entries (obtuse dihedral angles) |
-| 2D Q1, consistent A₀ | fails: 1464 positive off-diagonal entries (consistent potential term) |
-| 2D Q1, S, Neumann | fails only the strict row: S is singular |
+| Case | Result | Re-measured 2026-10-10 (`check_m_matrix.py`, `main` 95d8925, gcc 16.2.1) |
+|---|---|---|
+| 2D Q1, S, level 5 | all hypotheses hold (56 of 225 rows strictly dominant, 1 component) | holds; 56 of 225, 1 component |
+| 2D P1 simplex, S, level 4 | holds; min relative entry of A⁻¹ 7.8e-4 | holds; 7.80e-4 over 3 columns |
+| 3D Q1, S, level 3 | holds | holds; 26 of 27 rows strictly dominant |
+| 2D P1 simplex, lumped A₀, levels 2–5 | holds on every level | holds on levels 2-5 (25, 81, 289, 1089 DoFs) |
+| 3D P1 simplex, lumped A₀ | fails: 268 positive off-diagonal entries (obtuse dihedral angles) | fails: 8 positive entries at level 2 (13 free DoFs; the level of the 268 is not stated) |
+| 2D Q1, consistent A₀ | fails: 1464 positive off-diagonal entries (consistent potential term) | fails: 1464 positive, 24 rows not dominant |
+| 2D Q1, S, Neumann | fails only the strict row: S is singular | fails only the strict row: 0 of 289 |
 
 - Q2 and P2-bubble are no M-matrices even with lumping; positivity can only be expected for
   degree 1.
@@ -79,15 +92,17 @@ Branch `proto/m-matrix`, 1 commit on top of `efc7292` (state of 2026-10-07); it 
 
 ## 5. Relation to positivity in practice
 
-- The M-matrix property is necessary but not sufficient for non-negative iterates: inner solves
-  with the default `--tol-inner-res 1e-2` leave negative entries of order 1e-5. With lumping and
+- The M-matrix property makes the exact energy-adaptive step positivity preserving; it is not
+  sufficient for the computed iterates (and not necessary for non-negative iterates in general):
+  inner solves with the default `--tol-inner-res 1e-2` leave negative entries of order 1e-5. With lumping and
   `--tol-inner-res` ≤ 1e-8 the iterates are non-negative up to rounding (measured).
 - The theory covers the energy-adaptive step with step size ≤ 1, not the mass or Frobenius
   gradients, nor the coarse corrections of FAS.
 
 ## 6. Open issues
 
-- Remove `test_m_matrix` (marked obsolete; still built and run as ctest `m_matrix`).
+- Remove `test_m_matrix` (marked obsolete; still built and run as ctest `m_matrix`). Done on
+  `main` (17d64c7); open instead: no ctest covers the property since then.
 - Non-symmetric matrices would need strongly connected components (Tarjan) instead of a
   single-component check; the program only reports the symmetry error.
 - Report the cells with obtuse angles for positive off-diagonal entries, to explain failures
