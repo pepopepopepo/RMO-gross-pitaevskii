@@ -368,7 +368,8 @@ def write_report(args, df, df_rates):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--build-dir", type=Path, default=Path(__file__).resolve().parent.parent / "cmake-build-debug-deal.ii")
+    parser.add_argument("--build-dir", type=Path, default=Path(__file__).resolve().parent.parent / "build" / "release",
+                        help="CMake build directory holding main_matrix and main_coarse (default: the release preset's)")
     parser.add_argument("--out-dir", default="verify_out")
     parser.add_argument("--levels", type=int, nargs="+", default=[5, 6, 7],
                         help="levels (h = 2R / 2^(level-1)); resolve the solution, e.g. h <= 1 for radius 8")
@@ -388,6 +389,8 @@ def main():
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     parser.add_argument("--no-plots", action="store_true")
     args = parser.parse_args()
+    # Every solver call runs with cwd=case_dir (run()), so a relative build dir must be made absolute first
+    args.build_dir = args.build_dir.resolve()
     args.betas = [int(b) if float(b).is_integer() else b for b in args.betas]
 
     cases = list(itertools.product(args.potentials, VARIANTS, args.levels))
