@@ -89,8 +89,9 @@ changes updates the note would have caught both.
 - C7. A relative `--build-dir` fails: every solver call runs with `cwd=case_dir` (line 78) and the path
   is never resolved (`FileNotFoundError: ... PosixPath('build/release/main_matrix')`).
 - C5. `NumberGenerator` is seeded from `config.gpe.seed` in `staging/test/arpack.cc:81` and
-  `gradient.cc:72`; `energy`, `lumping` and `operator` do not seed it, so a failure there is not
-  reproducible.
+  `gradient.cc:72`; `energy.cc:67` draws random points (`ellipsoid::random_point`) without seeding, so a
+  failure there is not reproducible. (`lumping` and `operator` draw no random numbers; an earlier
+  version of this line named them too.)
 - C4. Section 6: Neumann, V = 0, beta = 0 makes the energy-adaptive matrix singular and CG diverges with
   a non-constant start; no guard exists. One `AssertThrow` in the option check that rejects
   `--boundary neumann --potential zero --beta 0` with the energy-adaptive metric would turn a divergence
@@ -151,7 +152,7 @@ changes updates the note would have caught both.
 
 Changed here (one commit per file, after this review): the status header and the corrections above
 in the four notes. Left to upstream: merging `main` into the branch (A1); committing `tex/` (A3); the
-three one-line fixes in `verify_solutions.py` (C2, C6, C7) and the seeds in the three tests (C5); the
+three one-line fixes in `verify_solutions.py` (C2, C6, C7) and the seed in `energy.cc` (C5); the
 singular-matrix guard (C4); a ctest or a `verify`-style script that keeps the M-matrix property
 covered (B1).
 
