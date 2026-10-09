@@ -1,5 +1,9 @@
 # Design: a pybind11 interface for `main` / `main_coarse`
 
+Status (2026-10-10, checked against `main` 95d8925; see `review_proto_doc.md`): design only,
+nothing implemented. Since 2026-10-07 `main_export` became `src/main_matrix.cc` (35a2c34,
+2d7ec8b); the names below are updated, the design is unchanged.
+
 Design document only; no code has been changed. It is based on the state of `main` on
 2026-10-07.
 
@@ -101,7 +105,8 @@ C++     rmo/gpe/experiment.h  (new; experiment classes moved out of main_coarse.
   `.matrices()` returning `M`, `S`, `A0` as SciPy CSR matrices (built from the CSR arrays, one
   copy).
   - From `GrossPitaevskiiPackage`, `fe::assemble_*` and `make_sparsity_pattern`.
-  - Replaces `main_export`.
+  - Replaces `main_matrix --domain` / `--matrix-market` (was `main_export`; it now writes `M`,
+    `S` and `M_V` separately, not `A0`).
 - **`write_vtk(result, name, every)`, `write_bin(result, name)`:** from `util.h` `output_vtk` and
   `main_coarse.cc` `output_bin`; replace `--output-vtk`, `--output-every` and `--output-bin`.
 - **Optional: `Functional(...)`** with `value`, `gradient`, `residual`, `update`, and
@@ -178,7 +183,8 @@ graph stays in C++.
   - At module import, call `dealii::deal_II_exceptions::disable_abort_on_exception()`.
     Otherwise a failing `Assert` in a debug build aborts the whole Python process, instead of
     raising a `RuntimeError` (deal.II's exceptions derive from `std::exception`, which pybind11
-    translates).
+    translates). In a Release build `Assert` is compiled out, so a Release module only ever
+    raises from `AssertThrow`; the abort case exists in Debug builds only.
   - `AssertThrow` (CG non-convergence, invalid options) already throws.
 - **GIL and output:**
   - `run()` releases the GIL (`py::gil_scoped_release`) and only reacquires it when calling a
@@ -192,8 +198,9 @@ graph stays in C++.
   - deal.II is a shared library (`libdeal_II.9.7.1.dylib`), so it can be linked into a module.
   - CMake: `find_package(pybind11 CONFIG)`, `pybind11_add_module(rmo bindings/*.cc)`,
     `deal_ii_setup_target(rmo)`, with the rpath set to deal.II's libraries.
-  - The `-openmp-simd` flag from `CMakeLists.txt:110` (it is parsed as `-o penmp-simd`)
-    shouldn't be carried over.
+  - (A remark about a `-openmp-simd` flag at `CMakeLists.txt:110` stood here. No such flag
+    exists anywhere in this repository's history (`git log -S openmp-simd -- CMakeLists.txt` is
+    empty); it came from a local build configuration and is not a property of the project.)
 
 ## 5. Mapping CLI → Python (examples)
 
@@ -219,7 +226,7 @@ graph stays in C++.
 - `--output-bin=name`: `result.history` / `result.x` (in memory), or
   `rmo.write_bin(result, "name")`.
 - `--output-vtk=name --output-every 5`: `rmo.write_vtk(result, "name", every=5)`.
-- `main_export --matrices`: `rmo.Discretization(gpe, level).matrices()`.
+- `main_matrix --matrix-market`: `rmo.Discretization(gpe, level).matrices()`.
 - The table on stdout: `pd.DataFrame(result.table_dicts())`.
 
 ## 6. Suggested order
@@ -230,6 +237,6 @@ graph stays in C++.
 3. Module with options, enums, `SingleLevel`, `Result`/`CycleInfo`. Check: identical energies
    and tables to `main_coarse --metric none`.
 4. `MultiLevel`, and the observer callback.
-5. `Discretization` (replaces `main_export`), plus `verify_solutions.py` rewritten on top of the
+5. `Discretization` (replaces `main_matrix`), plus `verify_solutions.py` rewritten on top of the
    module, without subprocesses.
 6. Optional: the functional/metric interface, and vectorized Python potentials.
