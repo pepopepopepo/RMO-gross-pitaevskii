@@ -48,8 +48,10 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 from scipy.interpolate import griddata
+
+# seaborn is imported inside plot_line() and plot_heatmap(): verify_solutions.py imports the readers
+# (load_coords, load_solution) from this module and must not need seaborn for --no-plots
 
 # File-signature constants, mirroring include/gpe/util/serialize.h.
 #
@@ -209,6 +211,8 @@ def plot_line(x, z, title, out_path, vmin=None, vmax=None):
     z's own min/max -- the 1D analogue of a fixed colorbar range, so that
     line plots from different solutions remain visually comparable.
     """
+    import seaborn as sns
+
     plt.figure(figsize=(7, 4))
     ax = sns.lineplot(x=x, y=z)
     ax.set_title(title)
@@ -241,6 +245,8 @@ def plot_heatmap(grid_z, title, out_path, cmap="viridis", center=None, vmin=None
     colorbar=False hides the colorbar entirely. title="" (as opposed to
     None) hides the title -- ax.set_title("") reserves no title space.
     """
+    import seaborn as sns
+
     standalone = ax is None
     if standalone:
         plt.figure(figsize=(6, 5))
