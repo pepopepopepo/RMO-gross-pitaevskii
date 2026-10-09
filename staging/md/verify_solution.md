@@ -1,5 +1,13 @@
 # Design: verifying consistent and mass-lumped solutions (`proto/verify-solution`)
 
+Status (2026-10-10, checked against `main` 95d8925; see `review_proto_doc.md`): merged as PR #19
+(c869c8a). On `main` the commits are 6e2ca79 (`NumberGenerator`, `--initial`, `--seed`), 103bbf9
+(`--initial cosine`), 536aae8 (Matrix Market export), 35a2c34 and 2d7ec8b (`main_export` became
+`src/main_matrix.cc`, exporting `M`, `S` and `M_V`), 2c27603 (`verify_solutions.py`); the hashes in
+the table below are the pre-rewrite ones. Section 3 is updated to `main_matrix`; section 4 notes
+three defects of the script found on 2026-10-10; section 5 keeps the original numbers and adds the
+re-run on `main`.
+
 Branch `proto/verify-solution`, 5 commits on top of `efc7292` (state of 2026-10-07):
 
 | Commit | Content |
@@ -39,7 +47,15 @@ Branch `proto/verify-solution`, 5 commits on top of `efc7292` (state of 2026-10-
   at program start, so runs are reproducible. Not thread-safe; draw numbers from one thread only.
   All previous callers (manifold, metric, tests, benchmarks) use it.
 
-## 3. `staging/main_export.cc`
+## 3. `staging/main_export.cc` (now `src/main_matrix.cc`)
+
+On `main`, `main_matrix --matrix-market` writes `matrix_lvl<L>_dim<d>_{M,S,MV}.mtx` (`M` and `M_V`
+lumped under `--mass-lumping`); `verify_solutions.py` forms `A0 = S + M_V` itself
+(`verify_solutions.py:192`), takes the constrained DoFs from the rows of `S` without off-diagonal
+entries (`constrained_dofs`, line 176), the lumped weights from the diagonal of the lumped `M`
+(line 202), and the coordinates from `main_coarse --output-bin`'s `_coords.bin` (line 173). The
+`_weights.bin` and `_constrained.bin` files below are therefore no longer written; the text is kept
+as the record of the merged branch.
 
 - Same mesh options as the solvers (`gpe_cli_options()`, `--levels`/`--multilevel`), so the DoF
   numbering matches their `--output-bin` files. Per level L, base name `<name>_lvl<L>`:
@@ -83,6 +99,15 @@ Branch `proto/verify-solution`, 5 commits on top of `efc7292` (state of 2026-10-
   convergence). Exit code 1 if a required check fails.
 - Defaults: levels 5–7, Dirichlet, radius 8, `--initial random`, tight `--tol-inner-res`
   (inexact inner solves produce negative entries of order 1e-5 even for the lumped variant).
+- Three defects of the script on `main` 95d8925 (found 2026-10-10 while re-running it; fixes are
+  one line each, left to upstream):
+  - `--build-dir` defaults to `cmake-build-debug-deal.ii` (an IDE directory, line 371) while the
+    repository ships `CMakePresets.json` with `build/release`;
+  - a relative `--build-dir` fails with `FileNotFoundError` because every solver call runs with
+    `cwd=case_dir` (line 78) and the path is never resolved; pass an absolute path;
+  - `from plot_solution import load_coords, load_solution` (line 63) imports `seaborn` at module
+    scope through `plot_solution.py:51`, so `--no-plots` still needs seaborn installed; the two
+    readers belong in a module without plotting imports.
 
 ## 5. Results
 
@@ -101,6 +126,10 @@ may differ.
   2e-4), a convergence problem of the energy-adaptive method in this regime.
 - Consistent solutions have negative entries on coarse meshes (down to −0.18 for the lattice),
   as expected without the M-matrix property.
+- Re-run on `main` 95d8925 (2026-10-10, seed 42, `--jobs 16`, `OMP_NUM_THREADS=1`, `--no-plots`,
+  gcc 16.2.1, deal.II 9.7.1): 48 of 54 pass; the same six `zero`, β = 10000 cases hit the
+  2000-iteration cap with residuals 1.1e-6 .. 2.9e-4; normalization error ≤ 4.4e-16; the lumped
+  lattice at level 5 (h = 0.5) gives E = 1.330 (the aliasing value quoted above for h = 1).
 
 ## 6. Open issues
 
@@ -111,6 +140,8 @@ may differ.
 - Normalization and symmetry use the exported data; meshes that are not symmetric skip the
   symmetry check (reported as `nan`).
 - Neumann, V ≡ 0, β = 0 makes the energy-adaptive matrix singular; with a non-constant start CG
-  diverges. A guard (error message or a shift A + εM) is not implemented.
+  diverges. A guard (error message or a shift A + εM) is not implemented. (Review 2026-10-10: one
+  `AssertThrow` in the option check, rejecting `--boundary neumann --potential zero --beta 0` with
+  the energy-adaptive metric, turns the divergence into a message; still open.)
 - With the pybind11 interface (`doc/pybind11_interface.md`), the verifier could call the solvers
   directly instead of through subprocesses and files.
