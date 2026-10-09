@@ -1,5 +1,12 @@
 # Plan: `VectorBase` and `TangentVector` for the `ropt/` layer
 
+Status (2026-10-10, checked against `main` 95d8925; see `review_proto_doc.md`): plan only, no code.
+Every `path:line` below resolves on that tree. Added in the review: the existing `TangentVector`
+stub, which swaps the proposed types would and would not catch, the deal.II 9.7.1 state of
+`VectorSpaceVector`, and section 5 (the type-safety half on its own). Round 2 (proto/doc 6cfcb9f):
+upstream reflowed the text to 100 columns, content unchanged; these additions were reflowed to
+match.
+
 Goal: a switchable vector interface (`VectorBase`, with `dealii::Vector` as one implementation) and
 a distinct tangent vector type, so that point and tangent arguments of the Riemannian interfaces
 cannot be swapped.
@@ -15,16 +22,26 @@ cannot be swapped.
   first in `retract(z, x)` and `retract_inv(v, x)`, but the point comes first in `retract_diff(x, v,
   w)`.  `vector_prolongation` takes `(x_fine, y_coarse, …)` while `vector_restriction` takes
   `(y_coarse, x_fine, …)`.
+- **A stub already exists.** `ropt/manifold.h:22` declares `struct TangentVector { Vector<double>
+  data; };` under the TODO "type separation between manifold (point) and tangent vectors"; nothing
+  uses it. The type in section 2 replaces it.
+- **What the types would and would not have caught.** Of the three argument swaps fixed in July
+  2026, `update_parameters(phi, w_proj)` (5bd06e6) and `apply_metric(grad_tilt, u)` (a2768bb) mix a
+  point or an ambient vector with a tangent vector and would not compile under the signatures in
+  section 3. The third, `retract_inv_diff_by_norm_adjoint(M, phi, zeta, …)`, swaps two points and
+  still compiles; so do `retract_inv(z, x, out)` and `retract_inv_diff(x, zeta, …)` in the table
+  below. The remaining class needs either a base-point / trial-point distinction or the
+  `assert_tangent` check at those call sites.
 - **One vector changes type in place.** At `fas.h:274`, `zk` is a coarse point, and `retract_inv(zk,
   state.y)` overwrites it with a tangent vector at `y`. Distinct types make that impossible, so this
   call becomes out-of-place.
 - **Few calls go through the interface.** `retract_inv` is the only retraction called through
   `ManifoldBase` (`fas.h:274`). `retract_diff` and `retract_inv_diff` are only reached through
   `ellipsoid::` directly.  `MetricBase::apply` is used once, at `gpe/residual.h:151`.
-- **deal.II ≥ 9.6 is required.** deal.II itself appears to have deprecated its own virtual vector
-  base (`LinearAlgebra::VectorSpaceVector`) in favour of templates (not verified). This doesn't
-  argue against a virtual `VectorBase`: the design below keeps virtual calls to whole-vector
-  operations only, never per element.
+- **deal.II ≥ 9.6 is required.** deal.II 9.7.1 still ships its own virtual vector base
+  (`lac/vector_space_vector.h`, `LinearAlgebra::VectorSpaceVector`, no deprecation marker in the
+  header), so the library's direction argues neither for nor against a virtual `VectorBase`; the
+  design below keeps virtual calls to whole-vector operations only, never per element.
 
 ## Design
 
@@ -136,6 +153,34 @@ The `ellipsoid::` and `metric::` namespaces, `kernels.h`, `lac.h`, `LinearCombin
 `*Inverse` classes, `fe/`, and output and serialization all stay on
 `dealii::Vector<double>`. `OperatorMetric<Operator>` unwraps in `inner` and `apply`.
 
+### 5. Alternative: `TangentVector` first, `VectorBase` later
+
+The plan carries two goals: a switchable backend (`VectorBase`, `DealiiVector<V>`, `as_dealii`,
+`clone()` on every copy) and the point / tangent type check (`TangentVector`). The second does not
+need the first. A value type
+
+```cpp
+class TangentVector final {
+public:
+    explicit TangentVector(Vector<double> v);
+    static TangentVector zero_like(const Vector<double>& x);
+    void equ(double a, const TangentVector& u);  void add(double a, const TangentVector& u);
+    void sadd(double s, double a, const TangentVector& u);  void scale(double s);
+    Vector<double>&       vector();
+    const Vector<double>& vector() const;
+private:
+    Vector<double> m_v;
+};
+```
+
+gives the same guarantees (no implicit conversion in either direction, no `dot()`), with phases 3 to
+6 only: no `vector.h`, no adapter, no heap allocation per copy, no `as_dealii` at every override,
+and `Vector<double>(n)` keeps working in `ropt/` because points stay `Vector<double>`. The last
+paragraph of this plan already defers the second backend ("templating `gpe/` on the vector type is
+out of scope"); when one arrives, `VectorBase` can be introduced underneath `TangentVector` without
+touching its users, since the wrapper hides the storage. Doing the type check first keeps the
+mechanical step (15 oracle classes, 5 overrides each) to one signature change instead of two.
+
 ## Phases
 
 Each phase should leave everything compiling and `ctest` passing.
@@ -171,7 +216,9 @@ Each phase should leave everything compiling and `ctest` passing.
    - `gradient_problems.h` and `finite_difference.h` will need a tangent overload.
    - Check that the convergence tables are bit-identical to the reference runs in `data/org` for at
      least one SL case and one ML case (for example `sl_b100_l10` and
-     `ml_mass_proj_b100_l10_depth2`).
+     `ml_mass_proj_b100_l10_depth2`). Run both sides with `DEAL_II_NUM_THREADS=1 OMP_NUM_THREADS=1`:
+     threaded assembly changes the summation order, and the energies then differ in the last digits
+     for reasons that have nothing to do with the vector types.
 
 Phases 2–6 can't be split across commits cleanly without temporary dual overloads, because each
 interface is used by the next one. Practically, it's one branch with a commit per phase, using
