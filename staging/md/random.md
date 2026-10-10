@@ -1,5 +1,15 @@
 # Plan: random number generation
 
+Status (2026-10-10, checked against `main` fe9113c; see `review_proto_doc.md`, round 2): implemented
+the same day by 0b393c4 on `main`, in a different shape: `Engine` is `std::mt19937` itself (no
+`Random` wrapper), `DistributionBase<T>` / `Distribution<Std>` are option E's hierarchy, kernels
+take `DistributionBase<double>&`; no `GPE_Options::initial_dist` or `--initial-dist` (phase 5),
+`rand_sparse_vec_idx` kept without a caller (phase 4 undecided), phases 1-3 folded into one commit
+(bit-identical to the old sequence, verified). "How `util/random.h` works today" below describes the
+tree before that commit; every `path:line` resolves on this branch's base c869c8a and none on `main`
+now. The `random.h` TODO cited under "Distribution parameters stay per call" exists at no commit of
+the repository (two unrelated TODOs were removed by 6e2ca79).
+
 Goal: replace the `NumberGenerator` singleton of `include/rmo/util/random.h` with explicitly passed
 `Random` instances, so that the numbers drawn at one site no longer depend on draws elsewhere in the
 program.
