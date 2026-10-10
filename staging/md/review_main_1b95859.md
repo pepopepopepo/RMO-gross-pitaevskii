@@ -2,10 +2,11 @@
 
 Reviewed 2026-10-10 on the `pepopepopepo` fork, branch `audit/main` (cut from 1b95859; see `FORK.md` at
 the root for how the fork's branches relate). Round 2 reviewed 95d8925..fe9113c (sections 1-4), round 3
-1b95859 (section 5). Environment: Linux, gcc 16.2.1, deal.II 9.7.1 (built against boost 1.92), doxygen 1.15.
-Every `path:line` below was checked on the 1b95859 tree (1b95859 changes two lines of `include/rmo/option.h`
-and no line count, so the round-2 citations stand); every number comes from a command quoted in the last
-section, "Reproduction". This branch adds only this file.
+1b95859 (section 5) and the level-11 benchmark against the paper (section 6). Environment: Linux, gcc
+16.2.1, deal.II 9.7.1 (built against boost 1.92), doxygen 1.15. Every `path:line` below was checked on the
+1b95859 tree (1b95859 changes two lines of `include/rmo/option.h` and no line count, so the round-2
+citations stand); every number comes from a command quoted in the last section, "Reproduction". This
+branch adds only this file.
 
 ## 0. Verdicts
 
@@ -15,6 +16,8 @@ section, "Reproduction". This branch adds only this file.
 | fe9113c "document random.h" | sound | doxygen parses the file without a warning; one stale help string outside the file (C3) |
 | `staging/md/random.md` on `proto/doc` (not part of main) | now a merged-work note | the plan this commit implements, in a different shape; reviewed on `audit/proto-doc`, round 2 |
 | 1b95859 "decrease --eps default to 2e-8" | sound; one stale help string | the default now matches `study.sh`; the `--eps` help text names the wrong norm (B5, section 5) |
+| level-11 benchmark at eps 2e-8 (section 6) | the paper's Table 8 claim holds, larger here | 32 of 40 multilevel configurations faster than single-level; frobenius/differential_frobenius slower at every depth (E3) |
+| `main_coarse` exit status (section 6) | a gap | exits 0 after a stalled line search or at the iteration cap (E5) |
 
 Round 1 (`audit/proto-doc`, `review_proto_doc.md`): C5 (unseeded `energy.cc`) is closed by 0b393c4 in
 upstream's own shape. C2, C6, C7 (`verify_solutions.py`, `plot_solution.py`) are still open on main;
@@ -100,8 +103,9 @@ comparison and the status header live on `audit/proto-doc` (round 2 of `review_p
 ## 4. What this branch changes, what is left to upstream
 
 This branch: this file and `FORK.md`. Left to upstream: C1 (delete or test `rand_sparse_vec_idx`), C2
-(one sentence in the docstring), C3 (the help string), B5 (the `--eps` help string, round 3), and the
-`verify_solutions.py` fixes of round 1 (`fix/verify-solutions`, two commits, cherry-pickable).
+(one sentence in the docstring), C3 (the help string), B5 (the `--eps` help string, round 3), the
+`verify_solutions.py` fixes of round 1 (`fix/verify-solutions`, two commits, cherry-pickable), and from
+section 6: E3 (frobenius/differential_frobenius), E4 (the line-search rejections), E5 (the exit status).
 
 ## 5. 1b95859: the `--eps` default (round 3)
 
@@ -118,7 +122,72 @@ This branch: this file and `FORK.md`. Left to upstream: C1 (delete or test `rand
   either. Suggested: "stop coarse corrections once the level's gradient norm (in the coarse-condition metric)
   is at or below this".
 
-## 6. Reproduction
+## 6. Level-11 benchmark at eps 2e-8, against the paper's Table 8
+
+Measured 2026-10-10 on the reviewer's machine: one pinned core of a 16-core desktop, performance governor,
+`OMP_NUM_THREADS=1 DEAL_II_NUM_THREADS=1`, the binary built at fe9113c (1b95859 changes only the default
+of `--eps`, which every run passes). An earlier section 6, published on this branch on the morning of
+2026-10-10, was measured at the old default `--eps 1e-4` and counted duplicate transports as separate
+algorithms; it is withdrawn and replaced by this one.
+
+Setup: `study.sh`'s arguments (`$COMMON --eps 2e-8`, Reproduction). Single-level: `--levels 11 --metric
+none --max-iter 1000 --tol-residual 1e-8`. Multilevel: five distinct (metric, transport) pairs at depths 2-5
+(`--multilevel 11,10[,9[,8[,7]]] --max-iter 150 --tol-residual 1e-8`): mass/adjoint_differential (Version
+III), mass/mass (IV), mass/differential (VI), frobenius/frobenius (IV), frobenius/differential_frobenius
+(the Frobenius counterpart of VI) (`option_types.h:166-175`). `study.sh`'s other pairs are duplicates:
+`option_types.h:173` calls ADJOINT_RESTRICTION_FROBENIUS "same as FROBENIUS", and in an eps 1e-4 run the
+same day adjoint_differential_frobenius gave frobenius's counts and mass adjoint_restriction gave
+adjoint_differential's, energies equal to the last printed digit. Every configuration ran with consistent
+mass and with `--mass-lumping`, once per round, five rounds (n = 5). Time: the `elapsed` column at the
+first fine-level row with residual <= 1e-8, what `staging/plot_times_table.py` reads. A difference to
+single-level counts when it is over max(5 %, the larger interquartile range); every row below passes that
+bar. Solver time against single-level, median of five:
+
+| pair (paper's version) | consistent mass, depth 2 / 3 / 4 / 5 | lumped mass, depth 2 / 3 / 4 / 5 |
+|---|---|---|
+| single-level (EARGD) | 77.44 s, 130 iterations | 12.35 s, 131 iterations |
+| mass/adjoint_differential (III) | -37.6 / -66.4 / -68.4 / -67.2 % | -20.0 / -62.9 / -81.1 / -85.2 % |
+| mass/mass (IV) | -39.3 / -64.5 / -67.0 / -59.7 % | -20.7 / -57.2 / -71.1 / -76.9 % |
+| mass/differential (VI) | -39.0 / -63.9 / -66.1 / -59.5 % | -17.7 / -56.1 / -69.5 / -75.9 % |
+| frobenius/frobenius (IV) | -44.0 / -71.7 / -84.8 / -89.5 % | -37.6 / -71.2 / -84.7 / -89.6 % |
+| frobenius/differential_frobenius | +25.8 / +39.5 / +48.2 / +50.0 % | +44.4 / +46.6 / +45.3 / +42.7 % |
+
+- E1. **Table 8 holds and is exceeded.** Table 8 (single-level 237 s; 2-, 3-, 4-level -27, -39, -39 %;
+  mass metric, Version III, residual 1e-8) against mass/adjoint_differential with consistent mass
+  (`study.sh`'s default): -37.6 / -66.4 / -68.4 %. Depth 3 and 4 are within 6 % of each other, as in the
+  paper; depth 5 adds nothing. Absolute times depend on machine and revision; the paper names neither.
+- E2. **Every configuration converges at level 11**, each to its condition's single-level energy
+  (30.3547061313 consistent, 30.3485204681 lumped; equal within 1e-9 relative), and the five rounds give
+  identical iteration counts, energies, residuals, coarse steps and inner-iteration sums. Lumping changes
+  the discrete problem (the energies differ by 2.0e-4 relative), so the two columns are never compared
+  with each other.
+- E3. **frobenius/differential_frobenius is slower than single-level at every depth**, in both conditions:
+  134-137 fine iterations against single-level's 130-131, plus 26-37 coarse steps. Its coarse corrections
+  do not reduce the fine work.
+- E4. **With consistent mass, the mass-metric pairs gain nothing past depth 4** (mass/mass and
+  mass/differential: 24 fine iterations at depth 4, 28 at depth 5). Only those runs, and
+  mass/adjoint_differential at depths 4-5, print `Warning: Armijo line search hit max iterations (3)`
+  (`ropt/descent.h:76`) followed by `-> Step rejected by line search.` (`ropt/solver.h:112`), 9-33 times
+  per run; no lumped run prints it. Not investigated.
+- E5. **At level 10 some configurations fail, and the exit status does not say so.** One pass over all of
+  them (2026-10-10, three re-run for this section): with consistent mass, frobenius/differential_frobenius
+  at depths 2-5 ends at the 150-iteration cap (residual 1.2-1.5e-8), mass/mass, mass/differential and
+  mass/adjoint_differential at depth 2 stop early (2.5-2.8e-8), mass/mass at depth 3 stops after one fine
+  iteration at residual 0.133 ("no progress possible (line search stalled), stopping early",
+  `ropt/fas.h:172, 317, 367`, `ropt/solver.h:232`), and mass/mass and mass/differential at depth 5
+  converge to energy 30.36218 against single-level's 30.36182 (1.2e-5 relative), another stationary point;
+  with lumped mass, frobenius/differential_frobenius at depths 2-5 hits the cap (1.2e-8), mass/mass at depth
+  5 stops after one iteration, and five configurations at depths 4-5 reach other states. Every one exits
+  0: `main` calls `run_experiment` (`src/main_coarse.cc:475`), checks no outcome, and ends with the implicit
+  `return 0`. A non-zero exit when the tolerance is not reached would let `study.sh` and similar scripts
+  notice. None of these failures occurs at level 11 (E2).
+- E6. **Setup outside `elapsed`** (mesh, assembly before the first iteration) is 1.7-3.6 s per run, median
+  2.8 s. Negligible for the consistent-mass times; for the fast lumped runs it is most of the process
+  (frobenius/frobenius depth 5 lumped: 1.28 s solver time, 4.08 s for the whole process).
+- E7. **Memory:** single-level holds the most (peak RSS 2.9 GB consistent, 2.8 GB lumped, against 1.1-2.5 GB
+  for the multilevel runs). Cause UNVERIFIED.
+
+## 7. Reproduction
 
 ```
 # build and tests (one thread, as benchmarked; round 2 at fe9113c, the same result at 1b95859)
@@ -154,4 +223,24 @@ for e in 1e-4 2e-8; do
       --max-iter 150 --tol-residual 1e-8 --metric frobenius --transport frobenius > ff-$e.org
   awk -F'|' '/^\| [0-9]/ {n=$4+0; if ($6 ~ /\*/) k++} END {print n, "iterations,", k+0, "coarse steps"}' ff-$e.org
 done                                             # 71 iterations, 3 coarse steps / 12 iterations, 6 coarse steps
+
+# section 6: one configuration's time and counts (pinned, one thread); sl's table has no gradient columns
+OMP_NUM_THREADS=1 DEAL_II_NUM_THREADS=1 taskset -c 1 build/release/main_coarse $COMMON --eps 2e-8 \
+    --multilevel 11,10,9 --max-iter 150 --tol-residual 1e-8 --metric mass --transport adjoint_differential > t.org
+awk -F'|' '/^\| [0-9]/ && $8+0 <= 1e-8 {print "iterations", $4+0, "elapsed", $14+0, "s"; exit}' t.org   # 26, ~26 s
+OMP_NUM_THREADS=1 DEAL_II_NUM_THREADS=1 taskset -c 1 build/release/main_coarse $COMMON --eps 2e-8 \
+    --levels 11 --metric none --max-iter 1000 --tol-residual 1e-8 > sl.org
+awk -F'|' '/^\| [0-9]/ && $6+0 <= 1e-8 {print "iterations", $2+0, "elapsed", $12+0, "s"; exit}' sl.org  # 130, ~78 s
+build/release/main_coarse $COMMON --eps 2e-8 --multilevel 11,10,9,8,7 --max-iter 150 --tol-residual 1e-8 \
+    --metric mass --transport mass > e.org 2> e.err; grep -c 'Step rejected' e.err    # E4: 33
+
+# E5 at level 10, all three exit 0
+M="--max-iter 150 --tol-residual 1e-8"
+build/release/main_coarse $COMMON --eps 2e-8 --multilevel 10,9,8 $M --metric mass --transport mass > a.org 2> a.err
+echo $?; grep -c 'stopping early' a.err; grep '^| [0-9]' a.org | tail -1     # 0; 2; iteration 1, residual 1.3280e-01
+build/release/main_coarse $COMMON --eps 2e-8 --multilevel 10,9 $M --metric frobenius \
+    --transport differential_frobenius > b.org; echo $?; grep '^| [0-9]' b.org | tail -1   # 0; iteration 150
+build/release/main_coarse $COMMON --eps 2e-8 --multilevel 10,9,8,7,6 $M --metric mass --transport mass > c.org
+build/release/main_coarse $COMMON --eps 2e-8 --levels 10 --metric none --max-iter 1000 --tol-residual 1e-8 > d.org
+grep '^| [0-9]' c.org | tail -1; grep '^| [0-9]' d.org | tail -1    # energy 3.0362182477536770e+01 / ...38373e+01
 ```
