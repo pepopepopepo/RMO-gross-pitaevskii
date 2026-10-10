@@ -6,6 +6,10 @@ pybind11 3.1.0. Every `path:line` below was checked on the e77e64f tree; every n
 command quoted in section 7. The four docs under `staging/md/` get a status header and minimal
 corrections on this branch (one commit per file); nothing else in the tree is touched.
 
+Round 2 (2026-10-10): the branch was rebased onto `proto/doc` 6cfcb9f and `main` moved to fe9113c; the
+delta is reviewed in section 8, the round-1 sections are unchanged. `FORK.md` at the root says how this
+branch relates to the fork's other branches.
+
 ## 0. Verdicts
 
 | doc | verdict | one line |
@@ -174,4 +178,59 @@ python -I staging/check_m_matrix.py matrix_lvl5_dim2 --matrix S [--inverse-colum
 # C3 (seaborn stubbed on sys.path, absolute build dir)
 OMP_NUM_THREADS=1 DEAL_II_NUM_THREADS=1 python -I staging/verify_solutions.py \
     --build-dir "$PWD/build/release" --out-dir <out> --jobs 16 --no-plots
+```
+
+## 8. Round 2: `proto/doc` 6cfcb9f against `main` fe9113c (2026-10-10)
+
+Three new upstream commits on the branch since e77e64f: 883713e and 941d577 add `random.md` (a plan to
+replace the `NumberGenerator` singleton, written with Claude Opus 5.5), 6cfcb9f reflows
+`tangent_vector_base.md` to 100 columns with no change of content. Nothing of round 1 was taken. The
+six round-1 commits above were replayed onto the reflowed text (our additions reflowed to match).
+
+| doc | verdict | one line |
+|---|---|---|
+| the branch | still rebase or merge `main` first | 3 behind `main` (95d8925, 0b393c4, fe9113c); `lumping.cc` untouched since, so A1 stands |
+| `random.md` | now a merged-work note; status header added | implemented the same day by 0b393c4 on `main`, in a different shape |
+| `tangent_vector_base.md` | unchanged in content | round-1 findings and section 5 stand |
+
+- F1. **`random.md` and its implementation.** The note proposes a `Random` wrapper around the engine plus
+  either a `std::variant` of parameter structs (B) or a `RandomBase` hierarchy (E), in six phases, and
+  recommends combining B and E. `main` 0b393c4 implements E without the wrapper: `Engine` is
+  `std::mt19937` itself (`random.h:49`), `DistributionBase<T>` / `Distribution<Std>` are the hierarchy
+  (`random.h:61`, `:171`), kernels take `DistributionBase<double>&` (`manifold.h:28`, `metric.h:83`,
+  `:115`, `:161`). Not done: `GPE_Options::initial_dist` and `--initial-dist` (phase 5), the choice for
+  `rand_sparse_vec_idx` (phase 4: kept, still no caller), the Boost distributions (phase 6). Phases 1-3
+  landed as one commit; the sequence is bit-identical to the old one anyway (`review_main_fe9113c.md`
+  A2 on `audit/main`: the same `--initial random --seed 42` table from a 95d8925 and an fe9113c binary).
+  The "tag before phase 3" caveat is moot: no run under `data/org` used `--initial random`.
+- F2. **Citations.** All thirteen `path:line` references in "How `util/random.h` works today" resolve on
+  this branch's base c869c8a (quoted in section 9) and none on `main` after 0b393c4. The "TODO in
+  `random.h`" about mean and standard deviation as constructor arguments exists at no commit:
+  `random.h` carried two TODOs ("use a set-based approach if `s` is much smaller than `n`", "allow a
+  user-specified seed") until 6e2ca79 removed them on 2026-10-07, before this branch's base.
+- F3. **The note's standard-library claims hold.** The preconditions it cites ([rand.dist.norm.normal],
+  [rand.dist.uni.real], [rand.dist.uni.int]) are the ones `random.h:108-146` checks; its libstdc++
+  observation (`_GLIBCXX_ASSERTIONS` only) matches the header's behaviour. Not re-run here.
+- F4. **Same pattern as A2 of round 1.** A design note merged into `proto/doc` the day its implementation
+  landed on `main`, without naming the implementing commit; the status header carries it. The round-1
+  suggestion stands: a merge with changes updates the note, or the note names its commit.
+
+## 9. Reproduction, round 2
+
+```
+git fetch origin && git merge-base origin/main origin/proto/doc            # c869c8a
+git log --oneline origin/proto/doc ^origin/main | wc -l                    # 5 (2 of round 1 + 3 new)
+git log --oneline origin/main ^origin/proto/doc                            # fe9113c 0b393c4 95d8925
+git diff --stat e77e64f 6cfcb9f                                            # random.md +374, tangent_vector_base.md +81 -69
+git diff e77e64f 6cfcb9f -- staging/md/tangent_vector_base.md | grep '^[-+]' | grep -v '^[-+][-+]' \
+    | sed 's/^[-+]//' | tr -s ' \n' ' ' | wc -w                             # a reflow: the same words
+# F2
+for ref in include/rmo/gpe/manifold.h:32 include/rmo/gpe/metric.h:90 include/rmo/gpe/model.h:100 \
+           src/main_coarse.cc:464 staging/test/gradient.cc:72; do
+    f=${ref%%:*}; l=${ref##*:}; git show c869c8a:$f | sed -n ${l}p; done   # each a NumberGenerator call
+git log --all --oneline -S'TODO' -- include/rmo/util/random.h               # 6e2ca79 ff88cea 9aafb68 ...
+git show 9aafb68:include/rmo/util/random.h | grep TODO                     # the two texts quoted in F2
+git show c869c8a:include/rmo/util/random.h | grep -c TODO                  # 0
+# A1 stands
+git log --oneline 6cfcb9f -- staging/test/lumping.cc | head -1             # older than 95d8925
 ```
